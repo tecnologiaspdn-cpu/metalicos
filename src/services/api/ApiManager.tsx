@@ -29,6 +29,7 @@ class ApiManager {
             if (response.data.ok) {
                 //AuthService.setToken(response.token);
                 AuthService.setToken(response.data.usuario.usuario_id);
+                AuthService.setCookieLS("menuSideBar", JSON.stringify(response.data.menu));
             } // Simula la estructura de la respuesta 
             return {
                 //token: response.token,

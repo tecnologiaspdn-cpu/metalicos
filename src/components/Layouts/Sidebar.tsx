@@ -1,7 +1,7 @@
 import PerfectScrollbar from 'react-perfect-scrollbar';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { toggleSidebar } from '../../store/themeConfigSlice';
 import AnimateHeight from 'react-animate-height';
 import { IRootState } from '../../store';
@@ -39,8 +39,7 @@ import { apiManager } from '../../services/api/ApiManager';
 
 const Sidebar = () => {
     const basename = import.meta.env.VITE_BASENAME || '';
-
-
+    const navigate = useNavigate();
     const [currentMenu, setCurrentMenu] = useState<string>('');
     const [errorSubMenu, setErrorSubMenu] = useState(false);
     const themeConfig = useSelector((state: IRootState) => state.themeConfig);
@@ -54,6 +53,27 @@ const Sidebar = () => {
         });
     };
 
+    const [menu, setMenu] = useState<any>(null);
+    useEffect(() => {
+        try {
+            const rawMenu = localStorage.getItem('menuSideBar');
+            //console.log("rawMenu", rawMenu);
+            const parsedMenu = rawMenu ? JSON.parse(rawMenu) : null;
+
+            if (Array.isArray(parsedMenu)) {
+                setMenu(parsedMenu);
+            } else {
+                setMenu("-1"); // o un estado vacío como []
+                navigate("/login");
+                //window.location.href = "./";
+            }
+        } catch (error) {
+            console.error("Error al parsear el menú:", error);
+            setMenu("-1"); // fallback si el JSON está corrupto
+            //redirigir al login
+            navigate("/login");
+        }
+    }, [])
     useEffect(() => {
         const selector = document.querySelector('.sidebar ul a[href="' + window.location.pathname + '"]');
         if (selector) {
@@ -84,7 +104,7 @@ const Sidebar = () => {
             >
                 <div className="bg-white dark:bg-black h-full">
                     <div className="flex justify-between items-center px-4 py-3">
-                        <NavLink to="/" className="main-logo flex items-center shrink-0 bg-primary"  >
+                        <NavLink to="/bienvenida" className="main-logo flex items-center shrink-0 bg-primary"  >
                             <img className="w-48 ml-[5px] flex-none" src={"/assets/images/logo.png"} alt="logo" />
                         </NavLink>
 
@@ -98,36 +118,7 @@ const Sidebar = () => {
                     </div>
                     <PerfectScrollbar className="h-[calc(100vh-80px)] relative">
                         <ul className="relative font-semibold space-y-0.5 p-4 py-0">
-                            {/* <li className="menu nav-item">
-                                <button type="button" className={`${currentMenu === 'dashboard' ? 'active' : ''} nav-link group w-full`} onClick={() => toggleMenu('dashboard')}>
-                                    <div className="flex items-center">
-                                        <IconMenuDashboard
-                                            className="group-hover:!text-primary shrink-0" />
-                                        <span className="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">{t('dashboard')}</span>
-                                    </div>
 
-                                    <div className={currentMenu !== 'dashboard' ? 'rtl:rotate-90 -rotate-90' : ''}>
-                                        <IconCaretDown />
-                                    </div>
-                                </button>
-
-                                <AnimateHeight duration={300} height={currentMenu === 'dashboard' ? 'auto' : 0}>
-                                    <ul className="sub-menu text-gray-500">
-                                        <li>
-                                            <NavLink to="/">{t('sales')}</NavLink>
-                                        </li>
-                                        <li>
-                                            <NavLink to="/analytics">{t('analytics')}</NavLink>
-                                        </li>
-                                        <li>
-                                            <NavLink to="/finance">{t('finance')}</NavLink>
-                                        </li>
-                                        <li>
-                                            <NavLink to="/crypto">{t('crypto')}</NavLink>
-                                        </li>
-                                    </ul>
-                                </AnimateHeight>
-                            </li> */}
                             <h2 className="py-3 px-7 flex items-center uppercase font-extrabold bg-white-light/30 dark:bg-dark dark:bg-opacity-[0.08] -mx-4 mb-1">
                                 <IconMinus className="w-4 h-5 flex-none hidden" />
                                 <span>OPERACIONES</span>
@@ -135,15 +126,7 @@ const Sidebar = () => {
 
                             <li className="nav-item">
                                 <ul>
-                                    {/* <li className="nav-item">
-                                        <NavLink to="/apps/contacts" className="group">
-                                            <div className="flex items-center">
-                                                <IconMenuContacts className="group-hover:!text-primary shrink-0" />
-                                                <span className="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">{t('contacts')}</span>
-                                            </div>
-                                        </NavLink>
-                                    </li> */}
-                                    <li className="menu nav-item">
+                                    {/* <li className="menu nav-item">
                                         <button type="button" className={`${currentMenu === 'gestion' ? 'active' : ''} nav-link group w-full`} onClick={() => toggleMenu('gestion')}>
                                             <div className="flex items-center">
                                                 <IconPlayCircle className="group-hover:!text-primary shrink-0" />
@@ -205,8 +188,7 @@ const Sidebar = () => {
                                         </button>
 
                                         <AnimateHeight duration={300} height={currentMenu === 'laboratorio' ? 'auto' : 0}>
-                                            <ul className="sub-menu text-gray-500">
-                                                {/* <h4>Jugadores</h4> */}
+                                            <ul className="sub-menu text-gray-500"> 
                                                 <li>
                                                     <NavLink to="/laboratorio/leyes">Gestión de Leyes</NavLink>
                                                 </li>
@@ -219,25 +201,63 @@ const Sidebar = () => {
                                             <div className="flex items-center">
                                                 <IconSettings className="group-hover:!text-primary shrink-0" />
                                                 <span className="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">Seguridad Patrimonial</span>
-                                            </div>
-
+                                            </div> 
                                             <div className={currentMenu !== 'seguridapatrimonial' ? 'rtl:rotate-90 -rotate-90' : ''}>
                                                 <IconCaretDown />
                                             </div>
                                         </button>
 
                                         <AnimateHeight duration={300} height={currentMenu === 'seguridapatrimonial' ? 'auto' : 0}>
-                                            <ul className="sub-menu text-gray-500">
-                                                {/* <h4>Jugadores</h4> */}
+                                            <ul className="sub-menu text-gray-500"> 
                                                 <li>
                                                     <NavLink to="/seguridapatrimonial/control">Control de Acceso</NavLink>
-                                                </li>
-
+                                                </li> 
                                             </ul>
                                         </AnimateHeight>
-                                    </li>
+                                    </li> */}
+                                    {menu && menu != "-1" && menu.map((item: any) => (
+                                        <li className="menu nav-item" key={item.id}>
+                                            {item.submenu ? <>
+                                                <button type="button" className={`${currentMenu === item.nombre ? 'active' : ''} nav-link group w-full`} onClick={() => toggleMenu(item.nombre)}>
+                                                    <div className="flex items-center">
+                                                        <IconMenuDashboard
+                                                            className="group-hover:!text-primary shrink-0" />
+                                                        <span className="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">{item.nombre}</span>
+                                                    </div>
 
-
+                                                    <div className={currentMenu !== item.nombre ? 'rtl:rotate-90 -rotate-90' : ''}>
+                                                        <IconCaretDown />
+                                                    </div>
+                                                </button>
+                                                <AnimateHeight duration={300} height={currentMenu === item.nombre ? 'auto' : 0}>
+                                                    <ul className="sub-menu text-gray-500">
+                                                        {item.submenu.map((subitem: any) => (
+                                                            <li key={subitem.id}>
+                                                                <NavLink to={"/" + subitem.link}>{subitem.nombre}</NavLink>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </AnimateHeight>
+                                            </>
+                                                : <NavLink to={"/" + item.link} className="group">
+                                                    <div className="flex items-center">
+                                                        <IconMenuScrumboard className="group-hover:!text-primary shrink-0" />
+                                                        <span className="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">{item.nombre}</span>
+                                                    </div>
+                                                </NavLink>
+                                            }
+                                        </li>
+                                    ))}
+                                    {menu == "-1" &&
+                                        <li className="menu nav-item">
+                                            <NavLink to="/login" className="group">
+                                                <div className="flex items-center">
+                                                    <IconMenuDashboard className="group-hover:!text-primary shrink-0" />
+                                                    <span className="ltr:pl-3 rtl:pr-3 text-black dark:text-[#506690] dark:group-hover:text-white-dark">Login</span>
+                                                </div>
+                                            </NavLink>
+                                        </li>
+                                    }
                                 </ul>
                             </li>
 

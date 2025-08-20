@@ -9,7 +9,7 @@ export class AuthService {
     static setToken(token: string) {
         localStorage.setItem(API_CONFIG.AUTH.TOKEN_KEY, token);
     }
-    
+
     static removeToken() {
         localStorage.removeItem(API_CONFIG.AUTH.TOKEN_KEY);
     }
@@ -17,7 +17,12 @@ export class AuthService {
     static isAuthenticated() {
         return !!this.getToken();
     }
-
+    static setCookieLS(name: string, value: string) {
+        localStorage.setItem(name, value);
+    }
+    static removeCookieLS(name: string) {
+        localStorage.removeItem(name);
+    }
     static handleAuthError() {
         if (this.isHandlingAuthError) return;
 

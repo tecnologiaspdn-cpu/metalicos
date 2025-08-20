@@ -35,9 +35,9 @@ export class HttpClient {
                 //throw new Error('Eror de autenticación');
             }
 
-            /*if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
-            }*/
+            if (!response.ok) {
+                //throw new Error(`HTTP Error: ${response.status}`);
+            }
 
             // Devuelve la respuesta parseada como JSON
             return (await response.json()) as T;

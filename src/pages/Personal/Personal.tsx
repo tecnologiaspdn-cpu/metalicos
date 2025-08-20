@@ -66,7 +66,7 @@ const PersonalCRUD: React.FC = () => {
             console.log("para agregar", data)
             addPersonal(data);
         }
-        //setShowForm(false);
+        setShowForm(false);
         setEditingPersonal(null);
     };
 

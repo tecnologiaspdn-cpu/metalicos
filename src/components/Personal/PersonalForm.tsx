@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Form } from 'devextreme-react/form';
 import { Button } from 'devextreme-react/button';
 import TextArea from 'devextreme-react/text-area';
@@ -16,9 +16,9 @@ const toInitial = (p?: Personal): PersonalFormData => ({
     ape_pat: p?.ape_pat || '',
     ape_mat: p?.ape_mat || '',
     documento: p?.documento || '',
-    tipo_doc: p?.tipo_doc ?? 1,
-    puesto: p?.puesto ?? 0,
-    area: p?.area ?? 0,
+    tipo_doc: p?.tipo_doc ?? 2,
+    puesto: p?.puesto ?? 123,
+    area: p?.area ?? 12,
     sub_area: p?.sub_area ?? 0,
     // usu_reg se setea al enviar
     tipo: p?.tipo || 'Empleado',
@@ -65,8 +65,8 @@ const PersonalForm: React.FC<PersonalFormProps> = ({
         const nombres_completos = `${formData.nombres} ${formData.ape_pat} ${formData.ape_mat || ''}`.trim();
         const payload: PersonalFormData = {
             ...formData,
-            usu_reg: 'admin'  
-        }; 
+            usu_reg: 'admin'
+        };
         onSubmit({
             ...payload,
             // el endpoint requiere nombres_completos en el JSON final;
@@ -76,7 +76,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({
         } as PersonalFormData & { nombres_completos?: string } as any);
     };
 
-    const formItems: any[] = [
+    const formItems: any[] = useMemo(() => ([
         {
             itemType: 'group',
             caption: 'Identificación',
@@ -92,8 +92,8 @@ const PersonalForm: React.FC<PersonalFormProps> = ({
                     editorType: 'dxSelectBox',
                     editorOptions: {
                         dataSource: [
-                            { id: 1, text: 'DNI' },
-                            { id: 2, text: 'CE' },
+                            { id: 2, text: 'DNI' },
+                            { id: 1, text: 'CE' },
                             { id: 3, text: 'Pasaporte' }
                         ],
                         valueExpr: 'id',
@@ -191,7 +191,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({
                 },
             ]
         },
-    ];
+    ]), []);
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-5xl">
@@ -217,4 +217,4 @@ const PersonalForm: React.FC<PersonalFormProps> = ({
     );
 };
 
-export default PersonalForm;
+export default React.memo(PersonalForm);

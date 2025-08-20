@@ -1,558 +1,283 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+import { NotFoundException, Result } from "@zxing/library";
 
-// Tipos para TypeScript
-interface AttendanceRecord {
-    fecha: string;
-    nombre_completo: string;
-    hora_entrada: string | null;
-    hora_salida: string | null;
-    horas_trabajadas: number;
-}
+export default function QRScannerResponsive() {
+    const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const controlsRef = useRef<IScannerControls | null>(null);
 
-interface User {
-    codigo_empleado: string;
-    nombre_completo: string;
-    tipo_documento: string;
-    numero_documento: string;
-    tipo_empleado: string;
-    direccion: string;
-    guardia: 'dia' | 'noche';
-    telefono?: string;
-    email?: string;
-}
-
-interface APIResponse<T = any> {
-    success: boolean;
-    message: string;
-    data: T;
-}
-
-// Simulación de API y funciones globales para el ejemplo
-const mockAPI = {
-    get: async (endpoint: string, params?: any): Promise<APIResponse<AttendanceRecord[]>> => {
-        // Simular datos de ejemplo
-        return {
-            success: true,
-            message: 'OK',
-            data: [
-                {
-                    fecha: new Date().toISOString().slice(0, 10),
-                    nombre_completo: 'Juan Pérez',
-                    hora_entrada: '08:30',
-                    hora_salida: null,
-                    horas_trabajadas: 0
-                },
-                {
-                    fecha: new Date().toISOString().slice(0, 10),
-                    nombre_completo: 'María García',
-                    hora_entrada: '09:00',
-                    hora_salida: '17:30',
-                    horas_trabajadas: 8.5
-                }
-            ]
-        };
-    },
-    post: async (endpoint: string, data: any): Promise<APIResponse> => {
-        console.log('API Call:', endpoint, data);
-        return {
-            success: true,
-            message: 'Asistencia registrada correctamente',
-            data: null
-        };
-    }
-};
-
-const mockUser: User = {
-    codigo_empleado: 'EMP001',
-    nombre_completo: 'Juan Carlos Pérez García',
-    tipo_documento: 'DNI',
-    numero_documento: '12345678',
-    tipo_empleado: 'Administrativo',
-    direccion: 'Av. Los Pinos 123, San Isidro, Lima',
-    guardia: 'dia',
-    telefono: '987-654-321',
-    email: 'juan.perez@empresa.com'
-};
-
-// Componente para generar QR (simplificado para el ejemplo)
-const QRCodeDisplay: React.FC<{ value: string; size?: number }> = ({ value, size = 250 }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [scanning, setScanning] = useState(false);
+    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>(undefined);
+    const [torchOn, setTorchOn] = useState(false);
+    const [result, setResult] = useState<Result | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // En un proyecto real, aquí usarías una librería como qrious o qr-code
-        // Para este ejemplo, mostramos un placeholder
-        const canvas = canvasRef.current;
-        if (canvas) {
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-                // Dibujar un placeholder de QR
-                ctx.fillStyle = '#000';
-                ctx.fillRect(0, 0, size, size);
-                ctx.fillStyle = '#fff';
-                ctx.font = '14px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('QR CODE', size / 2, size / 2 - 10);
-                ctx.fillText(value, size / 2, size / 2 + 10);
-            }
-        }
-    }, [value, size]);
-
-    return <canvas ref={canvasRef} width={size} height={size} className="border rounded-lg" />;
-};
-
-const ControlAcceso: React.FC = () => {
-    // Estados
-    const [isScanning, setIsScanning] = useState(false);
-    const [detectedCode, setDetectedCode] = useState<string | null>(null);
-    const [showResult, setShowResult] = useState(false);
-    const [scanStatus, setScanStatus] = useState('');
-    const [todayRecords, setTodayRecords] = useState<AttendanceRecord[]>([]);
-    const [loading, setLoading] = useState(false);
-
-    // Referencias
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-    const animationRef = useRef<number>();
-
-    // Función para mostrar notificaciones
-    const showNotification = (message: string, type: 'success' | 'error' | 'warning') => {
-        // En un proyecto real, usarías una librería de toast/notifications
-        alert(`${type.toUpperCase()}: ${message}`);
-    };
-
-    // Función para reproducir sonido de confirmación
-    const playBeep = useCallback(() => {
-        try {
-            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-
-            oscillator.frequency.value = 800;
-            oscillator.type = 'sine';
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.1);
-        } catch (error) {
-            console.warn('No se pudo reproducir el sonido:', error);
-        }
+        readerRef.current = new BrowserMultiFormatReader();
+        return () => {
+            stopScanner();
+            readerRef.current = null;
+        };
     }, []);
 
-    // Cargar registros de hoy
-    const loadTodayRecords = useCallback(async () => {
+    const enumerateDevices = useCallback(async () => {
         try {
-            setLoading(true);
-            const response = await mockAPI.get('/asistencia/historial', { limite: 40 });
-
-            if (response.success) {
-                const todayStr = new Date().toISOString().slice(0, 10);
-                const todayData = response.data.filter(record => record.fecha === todayStr);
-                setTodayRecords(todayData);
+            const all = await navigator.mediaDevices.enumerateDevices();
+            const cams = all.filter((d) => d.kind === "videoinput");
+            setDevices(cams);
+            if (!selectedDeviceId && cams.length) {
+                const back = cams.find((d) => /back|trase|rear|environment/i.test(d.label));
+                setSelectedDeviceId(back?.deviceId || cams[0].deviceId);
             }
-        } catch (error) {
-            console.error('Error cargando registros:', error);
-            showNotification('Error al cargar registros', 'error');
-        } finally {
-            setLoading(false);
+        } catch (e) {
+            setError("No se pudo enumerar las cámaras. Revisa permisos del navegador.");
         }
-    }, []);
+    }, [selectedDeviceId]);
 
-    // Función de escaneo
-    const scanFrame = useCallback(() => {
-        if (!isScanning || !videoRef.current || !canvasRef.current) return;
+    useEffect(() => {
+        enumerateDevices();
+    }, [enumerateDevices]);
 
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-
-        if (!context || video.readyState !== video.HAVE_ENOUGH_DATA) {
-            animationRef.current = requestAnimationFrame(scanFrame);
-            return;
-        }
-
-        // Ajustar canvas al tamaño del video
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-
-        // Dibujar frame actual
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // Obtener datos de imagen
-        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-
-        // Simulación de detección QR (en proyecto real usarías jsQR)
-        // Para este ejemplo, simulamos detección después de 3 segundos
-        if (Math.random() > 0.99) { // Simular detección aleatoria
-            onQRDetected('EMP002'); // Código simulado
-            return;
-        }
-
-        animationRef.current = requestAnimationFrame(scanFrame);
-    }, [isScanning]);
-
-    // Cuando se detecta un QR
-    const onQRDetected = useCallback((qrData: string) => {
-        if (animationRef.current) {
-            cancelAnimationFrame(animationRef.current);
-        }
-
-        setDetectedCode(qrData);
-        setShowResult(true);
-        setScanStatus('¡Código QR detectado! Confirme para marcar asistencia.');
-        playBeep();
-    }, [playBeep]);
-
-    // Iniciar escáner
-    const startQRScanner = async () => {
-        if (isScanning) return;
-
+    const startScanner = useCallback(async () => {
+        setError(null);
+        setResult(null);
+        if (!readerRef.current) return;
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: 'environment',
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+            setScanning(true);
+            const deviceId = selectedDeviceId;
+            const controls = await readerRef.current.decodeFromVideoDevice(
+                deviceId ?? undefined,
+                videoRef.current!,
+                (res, err, c) => {
+                    if (res) {
+                        setResult(res);
+                        // detener inmediatamente tras el primer QR
+                        c?.stop();
+                        setScanning(false);
+                    }
+                    if (err && !(err instanceof NotFoundException)) {
+                        setError(err.message);
+                    }
                 }
-            });
-
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                streamRef.current = stream;
-
-                await videoRef.current.play();
-
-                setIsScanning(true);
-                setScanStatus('Escaneando... Apunte la cámara hacia el código QR');
-
-                // Iniciar escaneo después de que el video esté listo
-                videoRef.current.addEventListener('loadedmetadata', () => {
-                    scanFrame();
-                });
-            }
-        } catch (error) {
-            console.error('Error al acceder a la cámara:', error);
-            showNotification('Error al acceder a la cámara: ' + (error as Error).message, 'error');
+            );
+            controlsRef.current = controls;
+            const stream = (videoRef.current?.srcObject as MediaStream) || null;
+            streamRef.current = stream;
+        } catch (e: any) {
+            setScanning(false);
+            setError(e?.message || "No se pudo iniciar la cámara.");
         }
-    };
+    }, [selectedDeviceId]);
 
-    // Detener escáner
-    const stopQRScanner = useCallback(() => {
-        setIsScanning(false);
-
-        if (animationRef.current) {
-            cancelAnimationFrame(animationRef.current);
-        }
-
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-
+    const stopScanner = useCallback(() => {
+        setScanning(false);
+        try {
+            controlsRef.current?.stop();
+        } catch { }
+        const tracks = streamRef.current?.getTracks() || [];
+        tracks.forEach((t) => t.stop());
         if (videoRef.current) {
             videoRef.current.srcObject = null;
         }
-
-        setShowResult(false);
-        setScanStatus('');
-        setDetectedCode(null);
+        streamRef.current = null;
+        setTorchOn(false);
     }, []);
 
-    // Procesar código detectado
-    const processDetectedQR = async () => {
-        if (!detectedCode) return;
-
+    const toggleTorch = useCallback(async () => {
         try {
-            const response = await mockAPI.post('/asistencia/registrar', {
-                codigo_empleado: detectedCode,
-                metodo: 'qr'
-            });
+            // Preferir API de ZXing si existe
+            /*if (controlsRef.current?.switchTorch) {
+                const ok = await controlsRef.current.switchTorch(!torchOn);
+                if (ok) setTorchOn((v) => !v);
+                return;
+            }*/
+            controlsRef.current?.switchTorch?.(!torchOn);
+            setTorchOn((v) => !v);
 
-            if (response.success) {
-                showNotification(response.message, 'success');
-                stopQRScanner();
-                await loadTodayRecords();
-            } else {
-                showNotification(response.message, 'error');
-                continueScanning();
+            // Fallback manual via MediaTrack constraints
+            const track = streamRef.current?.getVideoTracks()?.[0];
+            if (!track) return;
+            const ImageCaptureConstructor = (window as any).ImageCapture;
+            const imageCapture = ImageCaptureConstructor ? new ImageCaptureConstructor(track) : null;
+            let canTorch = false;
+            if (imageCapture?.getPhotoCapabilities) {
+                try {
+                    const caps = await imageCapture.getPhotoCapabilities();
+                    canTorch = (caps as any).fillLightMode?.includes("flash") || (track.getCapabilities?.() as any)?.torch;
+                } catch { }
             }
-        } catch (error) {
-            console.error('Error al procesar código QR:', error);
-            showNotification('Error al procesar código QR', 'error');
-            continueScanning();
+            const supports = (track.getCapabilities?.() as any)?.torch ?? canTorch;
+            if (supports) {
+                await track.applyConstraints({ advanced: [{ torch: !torchOn }] as any });
+                setTorchOn((v) => !v);
+            }
+        } catch {
+            // silencioso
         }
-    };
+    }, [torchOn]);
 
-    // Continuar escaneando
-    const continueScanning = () => {
-        setShowResult(false);
-        setScanStatus('Escaneando... Apunte la cámara hacia el código QR');
-        setDetectedCode(null);
+    const onPickImage = useCallback(
+        async (file: File) => {
+            setError(null);
+            setResult(null);
+            if (!readerRef.current) return;
+            const url = URL.createObjectURL(file);
+            try {
+                const res = await readerRef.current.decodeFromImageUrl(url);
+                setResult(res);
+            } catch (e: any) {
+                setError("No se pudo leer un QR en la imagen seleccionada.");
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        },
+        []
+    );
 
-        if (isScanning) {
-            scanFrame();
-        }
-    };
-
-    // Marcar asistencia manual
-    const registerAttendance = async () => {
+    const parsedProfile = useMemo(() => {
+        if (!result) return null;
         try {
-            const response = await mockAPI.post('/asistencia/registrar', {
-                codigo_empleado: mockUser.codigo_empleado,
-                metodo: 'manual'
-            });
-
-            if (response.success) {
-                showNotification(response.message, 'success');
-                await loadTodayRecords();
-            } else {
-                showNotification(response.message, 'error');
-            }
-        } catch (error: any) {
-            if (error.status === 400 && error.data?.message) {
-                showNotification(error.data.message, 'warning');
-            } else {
-                showNotification('Error al registrar asistencia', 'error');
-            }
+            const data = JSON.parse(result.getText());
+            return {
+                nombre: data.nombre || data.name,
+                docTipo: data.docTipo || data.doc_type,
+                docNum: data.docNum || data.doc_number,
+                empleado: data.tipoEmpleado || data.role,
+                guardia: data.guardia || data.shift,
+                direccion: data.direccion || data.address,
+                telefono: data.telefono || data.phone,
+                email: data.email,
+            } as Record<string, string | undefined>;
+        } catch {
+            return null;
         }
-    };
-
-    // Funciones de utilidad para estado de registros
-    const getStatusClass = (record: AttendanceRecord): string => {
-        if (!record.hora_entrada) return 'bg-red-100 text-red-800';
-        if (!record.hora_salida) return 'bg-yellow-100 text-yellow-800';
-        if (record.horas_trabajadas >= 8) return 'bg-green-100 text-green-800';
-        return 'bg-yellow-100 text-yellow-800';
-    };
-
-    const getStatusText = (record: AttendanceRecord): string => {
-        if (!record.hora_entrada) return 'Ausente';
-        if (!record.hora_salida) return 'En progreso';
-        if (record.horas_trabajadas >= 8) return 'Completo';
-        return 'Parcial';
-    };
-
-    // Cargar datos iniciales
-    useEffect(() => {
-        loadTodayRecords();
-    }, [loadTodayRecords]);
-
-    // Cleanup al desmontar componente
-    useEffect(() => {
-        return () => {
-            stopQRScanner();
-        };
-    }, [stopQRScanner]);
+    }, [result]);
 
     return (
-        <div className="space-y-6">
+        <div className="w-full p-4 md:p-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Scanner QR */}
-                <div className="bg-white rounded-lg shadow-md p-6">
-                    <h3 className="text-lg font-bold text-gray-800 mb-4">Escanear Código QR</h3>
-                    <div className="text-center">
-                        <div className="mb-4 relative">
-                            <video
-                                ref={videoRef}
-                                className={`w-full max-w-md mx-auto rounded-lg ${isScanning ? 'block' : 'hidden'}`}
-                                autoPlay
-                                muted
-                                playsInline
+                <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 p-5 md:p-6">
+                    <header className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl md:text-2xl font-semibold tracking-tight">Escanear Código QR</h2>
+                    </header>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+                        <button
+                            onClick={scanning ? stopScanner : startScanner}
+                            className={`inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 ${scanning
+                                ? "bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                                : "bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-600"
+                                }`}
+                        >
+                            {scanning ? "Detener" : "Iniciar Escáner"}
+                        </button>
+
+                        <label className="flex items-center gap-2 text-sm text-gray-600">
+                            Cámara:
+                            <select
+                                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                value={selectedDeviceId}
+                                onChange={(e) => setSelectedDeviceId(e.target.value)}
+                                disabled={scanning}
+                            >
+                                {devices.map((d) => (
+                                    <option key={d.deviceId} value={d.deviceId}>
+                                        {d.label || `Cámara ${d.deviceId.slice(0, 6)}`}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+
+                        {/* <button
+                            onClick={toggleTorch}
+                            disabled={!scanning}
+                            className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+                            title="Linterna"
+                        >
+                            {torchOn ? "Apagar linterna" : "Encender linterna"}
+                        </button> */}
+
+                        {/* <label className="ml-auto sm:ml-0">
+                            <span className="sr-only">Subir imagen</span>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => e.target.files && onPickImage(e.target.files[0])}
+                                className="hidden"
+                                id="qr-image"
                             />
-                            <canvas ref={canvasRef} className="hidden" />
+                            <label
+                                htmlFor="qr-image"
+                                className="cursor-pointer inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 hover:bg-indigo-200"
+                            >
+                                Leer desde imagen
+                            </label>
+                        </label>*/}
+                    </div>
 
-                            {showResult && (
-                                <div className="mt-4 p-4 bg-gray-100 rounded-lg">
-                                    <p className="text-lg font-semibold">Código detectado:</p>
-                                    <p className="text-blue-600 font-mono">{detectedCode}</p>
-                                    <button
-                                        onClick={processDetectedQR}
-                                        className="mt-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-                                    >
-                                        Marcar Asistencia
-                                    </button>
-                                    <button
-                                        onClick={continueScanning}
-                                        className="mt-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 ml-2"
-                                    >
-                                        Continuar Escaneando
-                                    </button>
-                                </div>
-                            )}
+                    <div className="aspect-video w-full rounded-xl bg-black/5 ring-1 ring-gray-100 overflow-hidden flex items-center justify-center">
+                        <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+                    </div>
 
-                            {scanStatus && (
-                                <div className="mt-2 text-sm text-gray-600">
-                                    {scanStatus}
-                                </div>
-                            )}
+                    <div className="mt-4 min-h-[2.5rem]">
+                        {error && (
+                            <p className="text-sm text-red-600">{error}</p>
+                        )}
+                        {!error && result && (
+                            <div className="space-y-1">
+                                <p className="text-sm text-gray-500">QR detectado:</p>
+                                <pre className="text-xs md:text-sm whitespace-pre-wrap break-all bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                    {result.getText()}
+                                </pre>
+                            </div>
+                        )}
+                        {!error && !result && (
+                            <p className="text-sm text-gray-500">Apunta la cámara hacia un código QR nítido y bien iluminado.</p>
+                        )}
+                    </div>
+                </section>
+
+                <aside className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 p-5 md:p-6">
+                    <header className="flex items-center justify-between mb-5">
+                        <h2 className="text-xl md:text-2xl font-semibold tracking-tight">Mi Perfil</h2>
+                        {/* <button className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 font-medium">
+                            Marcar Asistencia Manual
+                        </button> */}
+                    </header>
+
+                    {parsedProfile ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <InputDiv label="NOMBRES COMPLETOS" value={parsedProfile.nombre || "-"} full />
+                            <InputDiv label="TIPO DOCUMENTO" value={parsedProfile.docTipo || "-"} />
+                            <InputDiv label="N° DOCUMENTO" value={parsedProfile.docNum || "-"} />
+                            <InputDiv label="TIPO EMPLEADO" value={parsedProfile.empleado || "-"} />
+                            <InputDiv label="GUARDIA" value={parsedProfile.guardia || "-"} />
+                            <InputDiv label="DIRECCIÓN" value={parsedProfile.direccion || "-"} full />
+                            <InputDiv label="TELÉFONO" value={parsedProfile.telefono || "-"} />
+                            <InputDiv label="EMAIL" value={parsedProfile.email || "-"} />
                         </div>
-
-                        <button
-                            onClick={startQRScanner}
-                            className={`bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 mr-2 ${isScanning ? 'hidden' : ''}`}
-                        >
-                            <i className="fas fa-camera mr-2"></i>Iniciar Escáner
-                        </button>
-                        <button
-                            onClick={stopQRScanner}
-                            className={`bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 ${!isScanning ? 'hidden' : ''}`}
-                        >
-                            <i className="fas fa-stop mr-2"></i>Detener Escáner
-                        </button>
-                    </div>
-                </div>
-
-                {/* Mi Perfil y Código QR */}
-                <div className="bg-white rounded-lg shadow-md p-6">
-                    <h3 className="text-lg font-bold text-gray-800 mb-4">Mi Perfil</h3>
-
-                    {/* Botón de marcar asistencia manual */}
-                    <div className="text-center mb-6">
-                        <button
-                            onClick={registerAttendance}
-                            className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 font-semibold"
-                        >
-                            <i className="fas fa-clock mr-2"></i>Marcar Asistencia Manual
-                        </button>
-                    </div>
-
-                    {/* Información del perfil */}
-                    <div className="space-y-4 mb-6">
-                        <div className="grid grid-cols-1 gap-3">
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                    Nombres Completos
-                                </label>
-                                <p className="text-sm font-medium text-gray-900 mt-1">
-                                    {mockUser.nombre_completo}
-                                </p>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                        Tipo Documento
-                                    </label>
-                                    <p className="text-sm font-medium text-gray-900 mt-1">
-                                        {mockUser.tipo_documento}
-                                    </p>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                        N° Documento
-                                    </label>
-                                    <p className="text-sm font-medium text-gray-900 mt-1">
-                                        {mockUser.numero_documento}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                        Tipo Empleado
-                                    </label>
-                                    <p className="text-sm font-medium text-gray-900 mt-1">
-                                        {mockUser.tipo_empleado}
-                                    </p>
-                                </div>
-                                <div className="bg-gray-50 p-3 rounded-lg">
-                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                        Guardia
-                                    </label>
-                                    <p className="text-sm font-medium text-gray-900 mt-1">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${mockUser.guardia === 'dia'
-                                                ? 'bg-yellow-100 text-yellow-800'
-                                                : 'bg-blue-100 text-blue-800'
-                                            }`}>
-                                            <i className={`fas ${mockUser.guardia === 'dia' ? 'fa-sun' : 'fa-moon'} mr-1`}></i>
-                                            {mockUser.guardia === 'dia' ? 'Día' : 'Noche'}
-                                        </span>
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="bg-gray-50 p-3 rounded-lg">
-                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                    Dirección
-                                </label>
-                                <p className="text-sm font-medium text-gray-900 mt-1">
-                                    {mockUser.direccion}
-                                </p>
-                            </div>
-
-                            {(mockUser.telefono || mockUser.email) && (
-                                <div className="grid grid-cols-2 gap-3">
-                                    {mockUser.telefono && (
-                                        <div className="bg-gray-50 p-3 rounded-lg">
-                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                                Teléfono
-                                            </label>
-                                            <p className="text-sm font-medium text-gray-900 mt-1">
-                                                {mockUser.telefono}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {mockUser.email && (
-                                        <div className="bg-gray-50 p-3 rounded-lg">
-                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                                Email
-                                            </label>
-                                            <p className="text-sm font-medium text-gray-900 mt-1">
-                                                {mockUser.email}
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Mi Código QR - Pequeño */}
-                    <div className="text-center border-t pt-4">
-                        <h4 className="text-md font-semibold text-gray-700 mb-3">Mi Código QR</h4>
-                        <div className="flex justify-center mb-3">
-                            <QRCodeDisplay value={mockUser.codigo_empleado} size={120} />
-                        </div>
-                        <p className="text-xs text-gray-500">
-                            Código: <span className="font-mono font-bold text-gray-700">{mockUser.codigo_empleado}</span>
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Historial de Hoy */}
-            <div className="bg-white rounded-lg shadow-md p-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-4">Registros de Hoy</h3>
-                <div className="space-y-3">
-                    {loading ? (
-                        <div className="text-center text-gray-500">Cargando...</div>
-                    ) : todayRecords.length === 0 ? (
-                        <div className="text-center text-gray-500">No hay registros para hoy</div>
                     ) : (
-                        todayRecords.map((record, index) => (
-                            <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                                <div>
-                                    <span className="font-semibold">{record.nombre_completo}</span>
-                                    <div className="text-sm text-gray-600">
-                                        Entrada: {record.hora_entrada || 'N/A'} |
-                                        Salida: {record.hora_salida || 'N/A'}
-                                    </div>
-                                </div>
-                                <span className={`px-2 py-1 text-xs rounded-full ${getStatusClass(record)}`}>
-                                    {getStatusText(record)}
-                                </span>
-                            </div>
-                        ))
+                        <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
+                            Escanea un QR para ver tus datos aquí
+
+                        </div>
                     )}
-                </div>
+                </aside>
             </div>
         </div>
     );
-};
+}
 
-export default ControlAcceso;
+function InputDiv({ label, value, full = false }: { label: string; value?: string; full?: boolean }) {
+    return (
+        <div className={full ? "md:col-span-2" : undefined}>
+            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">{label}</div>
+            <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800">
+                {value || "-"}
+            </div>
+        </div>
+    );
+}

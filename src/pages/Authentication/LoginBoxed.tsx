@@ -43,10 +43,10 @@ const LoginBoxed = () => {
             console.log("response", response);
             //return
             if (response.code == 200 && response.message == "success") {
-                let paginaInicial = "gestion/personas"
+                let paginaInicial = "bienvenida";
                 //window.location.href = "./" + response.pagina_inicial;
-                window.location.href = "./" + paginaInicial;
-            } else {
+                navigate("/" + paginaInicial);
+            } else { 
                 setCondicionAlert(true);
             }
         } catch (error) {

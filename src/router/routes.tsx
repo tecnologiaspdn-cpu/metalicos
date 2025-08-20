@@ -5,6 +5,7 @@ const LoginBoxed = lazy(() => import('../pages/Authentication/LoginBoxed'));
 const ERROR404 = lazy(() => import('../pages/Pages/Error404'));
 const Personal = lazy(() => import('../pages/Personal/Personal'));
 const ControlAcceso = lazy(() => import('../pages/SeguridadPatrimonial/ControlAcceso'));
+const Bienvenida = lazy(() => import('../pages/Authentication/Bienvenida'));
 const routes = [
 
 
@@ -13,12 +14,25 @@ const routes = [
         element: <Personal />
     },
     {
+        path: "/gestion-personas/personal",
+        element: <Personal />
+    },
+    {
         path: "/seguridapatrimonial/control",
         element: <ControlAcceso />
     },
     {
+        path: "/seguridad-patrimonial/control-acceso",
+        element: <ControlAcceso />
+    },
+    {
+        path: '/bienvenida',
+        element: <Bienvenida />,
+    },
+    {
         path: '/',
-        element: <Index />,
+        element: <LoginBoxed />,
+        layout: 'blank',
     },
     {
         path: '/login',

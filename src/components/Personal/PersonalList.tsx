@@ -1,15 +1,10 @@
 import React, { useRef } from 'react';
-import {
-    DataGrid,
-    Column,
-    SearchPanel,
-    Paging,
-    Selection,
-    Export
-} from 'devextreme-react/data-grid';
+import { DataGrid, Column, SearchPanel, Paging, Selection, Export } from 'devextreme-react/data-grid';
 import { Button } from 'devextreme-react/button';
 import type DataGridType from 'devextreme/ui/data_grid';
 import { Personal } from '../../types/Personal';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 interface PersonalListProps {
     personal: Personal[];
@@ -26,9 +21,48 @@ const PersonalList: React.FC<PersonalListProps> = ({
 }) => {
     const dataGridRef = useRef<DataGridType | null>(null);
 
-    const handleExport = () => {
-        alert("viendo para exportar");
+
+    const handleExport = async () => {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Personal');
+
+        // Encabezados
+        worksheet.columns = [
+            { header: 'ID', key: 'id', width: 10 },
+            { header: 'Nombres', key: 'nombres', width: 20 },
+            { header: 'Apellido Paterno', key: 'ape_pat', width: 20 },
+            { header: 'Apellido Materno', key: 'ape_mat', width: 20 },
+            { header: 'Documento', key: 'documento', width: 15 },
+            { header: 'Tipo', key: 'tipo', width: 15 },
+            { header: 'Puesto', key: 'puesto', width: 15 },
+            { header: 'Área', key: 'area', width: 15 },
+            { header: 'Sexo', key: 'sexo', width: 10 },
+            { header: 'Estado', key: 'estado', width: 15 }
+        ];
+
+        // Datos
+        personal.forEach(p => {
+            worksheet.addRow({
+                id: p.id,
+                nombres: p.nombres,
+                ape_pat: p.ape_pat,
+                ape_mat: p.ape_mat,
+                documento: p.documento,
+                tipo: p.tipo,
+                puesto: p.puesto,
+                area: p.area,
+                sexo: p.sexo,
+                estado: p.estado
+            });
+        });
+
+        // Estilo opcional
+        worksheet.getRow(1).font = { bold: true };
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer], { type: 'application/octet-stream' }), 'Personal.xlsx');
     };
+
 
     const renderSexo = (data: any) => (
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${data.value === 'Masculino' ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800'
@@ -66,13 +100,14 @@ const PersonalList: React.FC<PersonalListProps> = ({
                     columnAutoWidth
                     wordWrapEnabled
                     className="w-full"
+                    columnHidingEnabled={true}
                 >
                     <SearchPanel visible width={260} placeholder="Buscar personal..." />
                     <Paging enabled pageSize={10} />
                     <Selection mode="single" />
-                    <Export enabled allowExportSelectedData formats={['xlsx']} />
+                    {/* <Export enabled allowExportSelectedData formats={['xlsx']} /> */}
 
-                    <Column dataField="id" caption="ID" width={80} alignment="center" />
+                    <Column dataField="id" caption="ID" width={60} alignment="center" />
                     <Column dataField="nombres" caption="Nombres" minWidth={150} />
                     <Column dataField="ape_pat" caption="Apellido Paterno" minWidth={150} />
                     <Column dataField="ape_mat" caption="Apellido Materno" minWidth={150} />
