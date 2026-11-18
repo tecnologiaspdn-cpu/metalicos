@@ -6,7 +6,9 @@ export interface Personal {
     documento?: string;
     tipo_doc?: number;
     puesto?: number;
+    puesto_nombre?: string;
     area?: number;
+    area_nombre?: string;
     sub_area?: number;
     usu_reg?: string;
     nombres_completos?: string;
@@ -37,6 +39,7 @@ export interface Personal {
     numero_emergencia?: string;
     contacto_emergencia?: string;
     estado?: '0' | '1';
+    id_empresa?: number | null;
 }
 
 export interface PersonalFormData

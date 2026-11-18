@@ -27,7 +27,8 @@ const Bienvenida: React.FC<WelcomeComponentProps> = ({
                             <div className="absolute w-32 h-32 sm:w-40 sm:h-40 border border-blue-400/20 rounded-full animate-spin" style={{ animationDuration: '15s', animationDirection: 'reverse' }}></div>
 
                             <div className="relative w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-600 rounded-full flex items-center justify-center shadow-2xl">
-                                <IconHome className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+                                {/* <IconHome className="w-8 h-8 sm:w-10 sm:h-10 text-white" /> */}
+                                <img className="w-48 ml-[5px] flex-none" src={"/assets/images/logo.png"} alt="logo" />
                             </div>
                         </div>
                     </div>
@@ -43,13 +44,14 @@ const Bienvenida: React.FC<WelcomeComponentProps> = ({
 
                     <div className="mb-8 sm:mb-10">
                         <div className="inline-flex items-center px-6 py-3 bg-white/10 backdrop-blur-sm rounded-full border border-white/20">
-                            <div className="w-2 h-2 bg-green-400 rounded-full mr-3 animate-pulse"></div>
-                            <span className="text-lg sm:text-xl text-gray-700 dark:text-blue-100">
+                            {/* <div className="w-2 h-2 bg-green-400 rounded-full mr-3 animate-pulse"></div> */}
+                            {/* <span className="text-lg sm:text-xl text-gray-700 dark:text-blue-100">
                                 Hola
-                                {/* <span className="font-bold text-amber-500">
+                                 <span className="font-bold text-amber-500">
                                  {nombre_usuario}//dsps podemos poner el nonbre del trabajodr
-                                 </span> */}
+                                 </span> 
                             </span>
+                            */}
                         </div>
                     </div>
 

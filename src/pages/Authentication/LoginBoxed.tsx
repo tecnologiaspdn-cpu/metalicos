@@ -19,7 +19,7 @@ import IconX from '../../components/Icon/IconX';
 const LoginBoxed = () => {
     const dispatch = useDispatch();
     useEffect(() => {
-        dispatch(setPageTitle('Login Boxed'));
+        dispatch(setPageTitle('Login'));
     });
     const navigate = useNavigate();
     const isDark = useSelector((state: IRootState) => state.themeConfig.theme === 'dark' || state.themeConfig.isDarkMode);
@@ -40,13 +40,20 @@ const LoginBoxed = () => {
         setCondicionAlert(false);
         try {
             const response = await apiManager.auth.login(datos); // Hacer la solicitud
-            console.log("response", response);
+            //console.log("response", response);
             //return
             if (response.code == 200 && response.message == "success") {
                 let paginaInicial = "bienvenida";
                 //window.location.href = "./" + response.pagina_inicial;
-                navigate("/" + paginaInicial);
-            } else { 
+                let existeruta = localStorage.getItem("rutaRedirect");
+                console.log("existeruta", existeruta);
+                if (existeruta && existeruta != "/login") {
+                    navigate(existeruta);
+                } else {
+                    navigate("/" + paginaInicial);
+                }
+
+            } else {
                 setCondicionAlert(true);
             }
         } catch (error) {
@@ -54,11 +61,12 @@ const LoginBoxed = () => {
         }
     };
 
-
+    const appId = import.meta.env.VITE_APP_ID || 0;
     const [condicionAlert, setCondicionAlert] = useState(false)
     const [datos, setDatos] = useState({
         username: "",
         password: "",
+        app_id: appId,
         recordar: false,
     })
     const manejadorInput = (event: any) => {

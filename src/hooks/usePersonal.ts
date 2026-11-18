@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 //import { apiManager } from '../services/ApiManager';
 import { Personal, PersonalFormData } from '../types/Personal';
 import { apiManager } from '../services/api/ApiManager';
@@ -42,39 +42,59 @@ const buildPayload = (data: PersonalFormData) => {
         sistema: data.sistema,
         numero_emergencia: data.numero_emergencia,
         contacto_emergencia: data.contacto_emergencia,
-        estado: data.estado
+        estado: data.estado,
+        id_empresa: data.id_empresa,
     };
 };
 
-export const usePersonal = () => {
+// estadoInicial: 1 = activos, 0 = cesados, undefined = endpoint original (sin filtro de estado)
+export const usePersonal = (estadoInicial?: 0 | 1) => {
     const [personal, setPersonal] = useState<Personal[]>([]);
+    const [estado, setEstado] = useState<0 | 1 | undefined>(estadoInicial);
+    const estadoRef = useRef<0 | 1 | undefined>(estadoInicial);
 
-    const fetchAll = async () => {
-        const resp = await apiManager.personal.getAll();
-        // Ajusta según tu backend (data path):
+    // Si se pasa `estadoActual` se usa y se recuerda para las recargas posteriores
+    const fetchAll = async (id_empresa: number, estadoActual: 0 | 1 | undefined = estadoRef.current) => {
+        const resp = estadoActual === undefined
+            ? await apiManager.personal.getAll({ id_empresa })
+            : await apiManager.personal.getByEstado({ id_empresa, estado: estadoActual });
+        // Estado y datos se actualizan juntos para que la tabla no pinte
+        // los botones del estado nuevo sobre filas del estado anterior.
+        estadoRef.current = estadoActual;
+        setEstado(estadoActual);
         setPersonal(resp.data || resp || []);
     };
-
-    useEffect(() => { fetchAll(); }, []);
+    const usuario = localStorage.getItem('usuarioCookie');
+    const id_empresa_usuario = usuario ? JSON.parse(usuario).empresa_id : 0
+    //console.log("id_empresa_usuario en usePersonal", id_empresa_usuario)
+    useEffect(() => { fetchAll(id_empresa_usuario); }, []);
 
     const addPersonal = async (form: PersonalFormData) => {
         const payload = buildPayload(form);
-        await apiManager.personal.create(payload);
-        await fetchAll();
+        const response = await apiManager.personal.create(payload);
+        await fetchAll(id_empresa_usuario);
+        return response;
     };
 
     const updatePersonal = async (id: number, form: PersonalFormData) => {
         const payload = buildPayload(form);
-        await apiManager.personal.update(payload, id);
-        await fetchAll();
+        let payloadWithId = { ...payload, id };
+        await apiManager.personal.update2(payloadWithId, id);
+        await fetchAll(id_empresa_usuario);
     };
 
-    const deletePersonal = async (id: number) => {
-        await apiManager.personal.delete(id);
-        await fetchAll();
+    const deletePersonal = async (id: number, data: any) => {
+        await apiManager.personal.delete(id, data);
+        await fetchAll(id_empresa_usuario);
+    };
+
+    const reactivarPersonal = async (personal_id: number) => {
+        const response = await apiManager.personal.reactivar({ personal_id });
+        await fetchAll(id_empresa_usuario);
+        return response;
     };
 
     const getPersonalById = (id: number) => personal.find(p => p.id === id) || null;
 
-    return { personal, addPersonal, updatePersonal, deletePersonal, getPersonalById };
+    return { personal, estado, addPersonal, updatePersonal, deletePersonal, reactivarPersonal, getPersonalById, fetchAll };
 };

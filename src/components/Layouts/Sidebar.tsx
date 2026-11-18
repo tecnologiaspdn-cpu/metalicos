@@ -64,6 +64,13 @@ const Sidebar = () => {
                 setMenu(parsedMenu);
             } else {
                 setMenu("-1"); // o un estado vacío como []
+                //capturo la ruta
+                let ruta = window.location.pathname;
+                let ruta_corregida = limpiarRuta(ruta);
+                console.log("ruta", ruta, ruta_corregida);
+                if (ruta_corregida && ruta_corregida != '/login')
+                    localStorage.setItem('rutaRedirect', (ruta_corregida));
+                //return
                 navigate("/login");
                 //window.location.href = "./";
             }
@@ -74,6 +81,15 @@ const Sidebar = () => {
             navigate("/login");
         }
     }, [])
+    function limpiarRuta(ruta: string) {
+        const segmentos = ruta.split('/').filter(Boolean); // elimina vacíos
+        if (segmentos[0] === 'metalicos') {
+            segmentos.shift(); // elimina el primer segmento
+        }
+        return '/' + segmentos.join('/');
+    }
+
+
     useEffect(() => {
         const selector = document.querySelector('.sidebar ul a[href="' + window.location.pathname + '"]');
         if (selector) {
@@ -103,19 +119,32 @@ const Sidebar = () => {
                 className={`sidebar fixed min-h-screen h-full top-0 bottom-0 w-[260px] shadow-[5px_0_25px_0_rgba(94,92,154,0.1)] z-50 transition-all duration-300 ${semidark ? 'text-white-dark' : ''}`}
             >
                 <div className="bg-white dark:bg-black h-full">
-                    <div className="flex justify-between items-center px-4 py-3">
-                        <NavLink to="/bienvenida" className="main-logo flex items-center shrink-0 bg-primary"  >
-                            <img className="w-48 ml-[5px] flex-none" src={"/assets/images/logo.png"} alt="logo" />
+                    <div className="relative h-20 px-4 bg-white shadow-sm dark:bg-dark flex items-center">
+                        {/* Logo centrado */}
+
+                        <NavLink
+                            to="/bienvenida"
+                            className="absolute left-1/2 transform -translate-x-1/2 "
+                        >
+                            <img
+                                src="/assets/images/logo.png"
+                                alt="Logo"
+                                className="h-16 w-auto object-contain"
+                            />
                         </NavLink>
 
+
+                        {/* Botón alineado a la derecha */}
                         <button
                             type="button"
-                            className="collapse-icon w-8 h-8 rounded-full flex items-center hover:bg-gray-500/10 dark:hover:bg-dark-light/10 dark:text-white-light transition duration-300 rtl:rotate-180"
+                            className="ml-auto w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-200 dark:hover:bg-dark-light/20 transition duration-300 rtl:rotate-180"
                             onClick={() => dispatch(toggleSidebar())}
                         >
-                            <IconCaretsDown className="m-auto rotate-90" />
+                            <IconCaretsDown className="rotate-90 text-gray-600 dark:text-white" />
                         </button>
                     </div>
+
+
                     <PerfectScrollbar className="h-[calc(100vh-80px)] relative">
                         <ul className="relative font-semibold space-y-0.5 p-4 py-0">
 

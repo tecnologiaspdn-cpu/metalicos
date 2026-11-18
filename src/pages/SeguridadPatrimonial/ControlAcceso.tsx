@@ -1,8 +1,41 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
-import { NotFoundException, Result } from "@zxing/library";
+import { NotFoundException } from "@zxing/library";
+import { apiManager } from "../../services/api/ApiManager";
 
-export default function QRScannerResponsive() {
+type Persona = {
+    nombre_completos: string;
+    documento: string;
+    tipo_doc: string;
+    area: string;
+    puesto: string;
+};
+
+type Movimiento = {
+    status: "0" | "1";
+    fecha_mov: string; // "YYYY-MM-DD"
+    tipo_mov_personal_id: number;
+    tipo_mov_personal_nombre: string;
+    empresa_id: number;
+    razon_social: string;
+    descripcion: string;
+    estado: "0" | "1";
+};
+
+type ApiData = {
+    status: "0" | "1";
+    persona?: Persona;
+    movimiento?: Movimiento;
+};
+
+type ApiResponse = {
+    code: number;
+    message: string;
+    value: any;
+    data: ApiData;
+};
+
+export default function ControlAcceso() {
     const readerRef = useRef<BrowserMultiFormatReader | null>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -12,7 +45,11 @@ export default function QRScannerResponsive() {
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>(undefined);
     const [torchOn, setTorchOn] = useState(false);
-    const [result, setResult] = useState<Result | null>(null);
+
+    const [qrRaw, setQrRaw] = useState<string | null>(null);
+    const [manualQr, setManualQr] = useState<string>(""); // <-- input manual
+    const [apiData, setApiData] = useState<ApiData | null>(null);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -21,6 +58,7 @@ export default function QRScannerResponsive() {
             stopScanner();
             readerRef.current = null;
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const enumerateDevices = useCallback(async () => {
@@ -32,7 +70,7 @@ export default function QRScannerResponsive() {
                 const back = cams.find((d) => /back|trase|rear|environment/i.test(d.label));
                 setSelectedDeviceId(back?.deviceId || cams[0].deviceId);
             }
-        } catch (e) {
+        } catch {
             setError("No se pudo enumerar las cámaras. Revisa permisos del navegador.");
         }
     }, [selectedDeviceId]);
@@ -41,10 +79,29 @@ export default function QRScannerResponsive() {
         enumerateDevices();
     }, [enumerateDevices]);
 
+    const fetchInfoByQR = useCallback(async (hashQr: string) => {
+        setLoading(true);
+        setError(null);
+        setApiData(null);
+        try {
+            const resp = (await (apiManager as any).personal.getInfoByQR({ hashQr })) as ApiResponse;
+            setApiData(resp?.data ?? null);
+            if (!resp?.data) {
+                setError("Respuesta del servidor inválida.");
+            }
+        } catch (e: any) {
+            setError(e?.message || "No se pudo obtener la información del QR.");
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
     const startScanner = useCallback(async () => {
         setError(null);
-        setResult(null);
+        setQrRaw(null);
+        setApiData(null);
         if (!readerRef.current) return;
+
         try {
             setScanning(true);
             const deviceId = selectedDeviceId;
@@ -53,8 +110,14 @@ export default function QRScannerResponsive() {
                 videoRef.current!,
                 (res, err, c) => {
                     if (res) {
-                        setResult(res);
-                        // detener inmediatamente tras el primer QR
+                        const text = res.getText();
+                        setQrRaw(text);
+
+                        // pedir datos al API y detener escáner
+                        (async () => {
+                            await fetchInfoByQR(text);
+                        })();
+
                         c?.stop();
                         setScanning(false);
                     }
@@ -70,7 +133,7 @@ export default function QRScannerResponsive() {
             setScanning(false);
             setError(e?.message || "No se pudo iniciar la cámara.");
         }
-    }, [selectedDeviceId]);
+    }, [selectedDeviceId, fetchInfoByQR]);
 
     const stopScanner = useCallback(() => {
         setScanning(false);
@@ -80,7 +143,7 @@ export default function QRScannerResponsive() {
         const tracks = streamRef.current?.getTracks() || [];
         tracks.forEach((t) => t.stop());
         if (videoRef.current) {
-            videoRef.current.srcObject = null;
+            (videoRef.current as any).srcObject = null;
         }
         streamRef.current = null;
         setTorchOn(false);
@@ -88,29 +151,14 @@ export default function QRScannerResponsive() {
 
     const toggleTorch = useCallback(async () => {
         try {
-            // Preferir API de ZXing si existe
-            /*if (controlsRef.current?.switchTorch) {
-                const ok = await controlsRef.current.switchTorch(!torchOn);
-                if (ok) setTorchOn((v) => !v);
-                return;
-            }*/
             controlsRef.current?.switchTorch?.(!torchOn);
             setTorchOn((v) => !v);
 
-            // Fallback manual via MediaTrack constraints
             const track = streamRef.current?.getVideoTracks()?.[0];
             if (!track) return;
-            const ImageCaptureConstructor = (window as any).ImageCapture;
-            const imageCapture = ImageCaptureConstructor ? new ImageCaptureConstructor(track) : null;
-            let canTorch = false;
-            if (imageCapture?.getPhotoCapabilities) {
-                try {
-                    const caps = await imageCapture.getPhotoCapabilities();
-                    canTorch = (caps as any).fillLightMode?.includes("flash") || (track.getCapabilities?.() as any)?.torch;
-                } catch { }
-            }
-            const supports = (track.getCapabilities?.() as any)?.torch ?? canTorch;
-            if (supports) {
+
+            const caps = (track.getCapabilities?.() as any) ?? {};
+            if (caps.torch) {
                 await track.applyConstraints({ advanced: [{ torch: !torchOn }] as any });
                 setTorchOn((v) => !v);
             }
@@ -119,103 +167,93 @@ export default function QRScannerResponsive() {
         }
     }, [torchOn]);
 
-    const onPickImage = useCallback(
-        async (file: File) => {
-            setError(null);
-            setResult(null);
-            if (!readerRef.current) return;
-            const url = URL.createObjectURL(file);
-            try {
-                const res = await readerRef.current.decodeFromImageUrl(url);
-                setResult(res);
-            } catch (e: any) {
-                setError("No se pudo leer un QR en la imagen seleccionada.");
-            } finally {
-                URL.revokeObjectURL(url);
+    const hasData = apiData?.status === "1" && apiData.persona && apiData.movimiento;
+
+    const fechaMovFmt = useMemo(() => {
+        const f = apiData?.movimiento?.fecha_mov;
+        if (!f) return "-";
+        const [y, m, d] = f.split("-");
+        return `${d}/${m}/${y}`;
+    }, [apiData?.movimiento?.fecha_mov]);
+
+    const parseYYYYMMDD = (s?: string) => {
+        if (!s) return null;
+        const [y, m, d] = s.split("-").map(Number);
+        const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
+        dt.setHours(0, 0, 0, 0);
+        return isNaN(dt.getTime()) ? null : dt;
+    };
+
+    const startOfToday = () => {
+        const t = new Date();
+        t.setHours(0, 0, 0, 0);
+        return t;
+    };
+    const movDate = parseYYYYMMDD(apiData?.movimiento?.fecha_mov);
+    const today = startOfToday();
+    const oneYearLater = new Date(today);
+    oneYearLater.setFullYear(today.getFullYear() + 1);
+
+    let movTone: "vip" | "past" | "future_or_today" | null = null;
+    if (movDate) {
+        if (movDate > oneYearLater) movTone = "vip";
+        else if (movDate < today) movTone = "past";
+        else movTone = "future_or_today";
+    }
+
+    const movTintClasses =
+        movTone === "vip"
+            ? "border-amber-200 bg-amber-50"
+            : movTone === "past"
+                ? "border-red-200 bg-red-50"
+                : movTone === "future_or_today"
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-gray-100 bg-white";
+
+    const movBadgeColor =
+        movTone === "vip" ? "amber" : movTone === "past" ? "red" : movTone === null ? "red" : "green";
+
+    // --- NUEVO: búsqueda manual ---
+    const onManualSubmit = useCallback(
+        async (e?: React.FormEvent) => {
+            if (e) e.preventDefault();
+            const q = (manualQr || "").trim();
+            if (!q) {
+                setError("Ingresa el texto del QR para buscar.");
+                return;
             }
+            // si estaba escaneando, detener la cámara para evitar conflictos
+            stopScanner();
+            setQrRaw(q);
+            await fetchInfoByQR(q);
         },
-        []
+        [manualQr, fetchInfoByQR, stopScanner]
     );
 
-    const parsedProfile = useMemo(() => {
-        if (!result) return null;
-        try {
-            const data = JSON.parse(result.getText());
-            return {
-                nombre: data.nombre || data.name,
-                docTipo: data.docTipo || data.doc_type,
-                docNum: data.docNum || data.doc_number,
-                empleado: data.tipoEmpleado || data.role,
-                guardia: data.guardia || data.shift,
-                direccion: data.direccion || data.address,
-                telefono: data.telefono || data.phone,
-                email: data.email,
-            } as Record<string, string | undefined>;
-        } catch {
-            return null;
-        }
-    }, [result]);
+    const onClearManual = useCallback(() => {
+        setManualQr("");
+        setQrRaw(null);
+        setApiData(null);
+        setError(null);
+    }, []);
 
     return (
         <div className="w-full p-4 md:p-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                {/* Escáner + manual input */}
                 <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 p-5 md:p-6">
-                    <header className="flex items-center justify-between mb-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                         <h2 className="text-xl md:text-2xl font-semibold tracking-tight">Escanear Código QR</h2>
-                    </header>
 
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
-                        <button
-                            onClick={scanning ? stopScanner : startScanner}
-                            className={`inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 ${scanning
-                                ? "bg-red-600 hover:bg-red-700 focus:ring-red-600"
-                                : "bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-600"
-                                }`}
-                        >
-                            {scanning ? "Detener" : "Iniciar Escáner"}
-                        </button>
-
-                        <label className="flex items-center gap-2 text-sm text-gray-600">
-                            Cámara:
-                            <select
-                                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                value={selectedDeviceId}
-                                onChange={(e) => setSelectedDeviceId(e.target.value)}
-                                disabled={scanning}
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                onClick={scanning ? stopScanner : startScanner}
+                                className={`inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-offset-2
+                ${scanning ? "bg-red-600 hover:bg-red-700 focus:ring-red-600" : "bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-600"}`}
                             >
-                                {devices.map((d) => (
-                                    <option key={d.deviceId} value={d.deviceId}>
-                                        {d.label || `Cámara ${d.deviceId.slice(0, 6)}`}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-
-                        {/* <button
-                            onClick={toggleTorch}
-                            disabled={!scanning}
-                            className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
-                            title="Linterna"
-                        >
-                            {torchOn ? "Apagar linterna" : "Encender linterna"}
-                        </button> */}
-
-                        {/* <label className="ml-auto sm:ml-0">
-                            <span className="sr-only">Subir imagen</span>
-                            <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => e.target.files && onPickImage(e.target.files[0])}
-                                className="hidden"
-                                id="qr-image"
-                            />
-                            <label
-                                htmlFor="qr-image"
-                                className="cursor-pointer inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-100 hover:bg-indigo-200"
-                            >
-                                Leer desde imagen
-                            </label>
-                        </label>*/}
+                                {scanning ? "Detener" : "Iniciar Escáner"}
+                            </button>
+                        </div>
                     </div>
 
                     <div className="aspect-video w-full rounded-xl bg-black/5 ring-1 ring-gray-100 overflow-hidden flex items-center justify-center">
@@ -223,46 +261,143 @@ export default function QRScannerResponsive() {
                     </div>
 
                     <div className="mt-4 min-h-[2.5rem]">
-                        {error && (
-                            <p className="text-sm text-red-600">{error}</p>
-                        )}
-                        {!error && result && (
+                        {error && <p className="text-sm text-red-600">{error}</p>}
+
+                        {!error && qrRaw && (
                             <div className="space-y-1">
                                 <p className="text-sm text-gray-500">QR detectado:</p>
                                 <pre className="text-xs md:text-sm whitespace-pre-wrap break-all bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                    {result.getText()}
+                                    {qrRaw}
                                 </pre>
                             </div>
                         )}
-                        {!error && !result && (
-                            <p className="text-sm text-gray-500">Apunta la cámara hacia un código QR nítido y bien iluminado.</p>
+
+                        {!error && !qrRaw && (
+                            <p className="text-sm text-gray-500">Apunta la cámara hacia un código QR nítido y bien iluminado, o usa la búsqueda manual más abajo.</p>
                         )}
                     </div>
+
+                    {/* --- NUEVO: búsqueda manual debajo del escáner --- */}
+                    <form onSubmit={onManualSubmit} className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                        <label htmlFor="manualQr" className="sr-only">Texto del QR</label>
+                        <input
+                            id="manualQr"
+                            value={manualQr}
+                            onChange={(e) => setManualQr(e.target.value)}
+                            placeholder="Pega o escribe aquí el texto del QR..."
+                            className="md:col-span-9 w-full rounded-xl border border-gray-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            disabled={loading}
+                        />
+                        <div className="flex md:col-span-3 gap-2">
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 font-medium disabled:opacity-50"
+                            >
+                                Buscar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onClearManual}
+                                className="rounded-xl bg-gray-100 hover:bg-gray-200 text-sm px-4 py-2 font-medium"
+                            >
+                                Limpiar
+                            </button>
+                        </div>
+                    </form>
                 </section>
 
+                {/* Resultado */}
                 <aside className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 p-5 md:p-6">
-                    <header className="flex items-center justify-between mb-5">
-                        <h2 className="text-xl md:text-2xl font-semibold tracking-tight">Mi Perfil</h2>
-                        {/* <button className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 font-medium">
-                            Marcar Asistencia Manual
-                        </button> */}
-                    </header>
+                    <div className="flex items-center justify-between mb-5">
+                        <h2 className="text-xl md:text-2xl font-semibold tracking-tight">Resultado</h2>
+                    </div>
 
-                    {parsedProfile ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <InputDiv label="NOMBRES COMPLETOS" value={parsedProfile.nombre || "-"} full />
-                            <InputDiv label="TIPO DOCUMENTO" value={parsedProfile.docTipo || "-"} />
-                            <InputDiv label="N° DOCUMENTO" value={parsedProfile.docNum || "-"} />
-                            <InputDiv label="TIPO EMPLEADO" value={parsedProfile.empleado || "-"} />
-                            <InputDiv label="GUARDIA" value={parsedProfile.guardia || "-"} />
-                            <InputDiv label="DIRECCIÓN" value={parsedProfile.direccion || "-"} full />
-                            <InputDiv label="TELÉFONO" value={parsedProfile.telefono || "-"} />
-                            <InputDiv label="EMAIL" value={parsedProfile.email || "-"} />
+                    {loading && (
+                        <div className="animate-pulse space-y-4">
+                            <div className="h-4 bg-gray-100 rounded w-1/3" />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {Array.from({ length: 8 }).map((_, i) => (
+                                    <div key={i} className="h-10 bg-gray-100 rounded-xl" />
+                                ))}
+                            </div>
                         </div>
-                    ) : (
-                        <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
-                            Escanea un QR para ver tus datos aquí
+                    )}
 
+                    {!loading && apiData?.status === "0" && (
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                            <div className="text-sm font-medium text-red-700">QR no existente</div>
+                            <p className="text-sm text-red-700/80 mt-1">
+                                No se encontró información para el código escaneado. Intenta nuevamente o verifica con soporte.
+                            </p>
+                            <div className="mt-3">
+                                <button
+                                    onClick={startScanner}
+                                    className="rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm px-4 py-2 font-medium"
+                                >
+                                    Reintentar escaneo
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {!loading && hasData && (
+                        <div className="space-y-6">
+                            <section>
+                                <h3 className="text-sm font-semibold text-gray-700 mb-3">Persona</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <InputDiv label="NOMBRES COMPLETOS" value={apiData!.persona!.nombre_completos} full />
+                                    <InputDiv label="TIPO DOCUMENTO" value={apiData!.persona!.tipo_doc} />
+                                    <InputDiv label="N° DOCUMENTO" value={apiData!.persona!.documento} />
+                                    <InputDiv label="ÁREA" value={apiData!.persona!.area} />
+                                    <InputDiv label="PUESTO" value={apiData!.persona!.puesto} />
+                                </div>
+                            </section>
+
+                            <section className={`rounded-xl border ${movTintClasses} p-4 md:p-5`}>
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-sm font-semibold text-gray-700">Movimiento</h3>
+                                    <Badge
+                                        color={movBadgeColor as any}
+                                        text={
+                                            movTone === "vip"
+                                                ? "VIP (≥ 1 año)"
+                                                : movTone === "past"
+                                                    ? "Pasado"
+                                                    : movTone === null
+                                                        ? "Pasado"
+                                                        : "Activo"
+                                        }
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <InputDiv label="FECHA" value={fechaMovFmt} />
+                                    <InputDiv label="TIPO MOVIMIENTO" value={apiData!.movimiento!.tipo_mov_personal_nombre} />
+                                    <InputDiv label="DESCRIPCIÓN" value={apiData!.movimiento!.descripcion} full />
+                                    {/* <InputDiv label="EMPRESA ID" value={String(apiData!.movimiento!.empresa_id)} /> */}
+                                    <InputDiv label="EMPRESA" value={String(apiData!.movimiento!.razon_social || "-")} />
+                                    <InputDiv
+                                        label="ESTADO"
+                                        value={apiData!.movimiento!.estado === "1" ? "Habilitado" : "Deshabilitado"}
+                                    />
+                                </div>
+                            </section>
+
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={startScanner}
+                                    className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2 font-medium"
+                                >
+                                    Escanear otro QR
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {!loading && !apiData && (
+                        <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
+                            Escanea un QR o usa la búsqueda manual para ver la información aquí.
                         </div>
                     )}
                 </aside>
@@ -279,5 +414,26 @@ function InputDiv({ label, value, full = false }: { label: string; value?: strin
                 {value || "-"}
             </div>
         </div>
+    );
+}
+
+function Badge({
+    text,
+    color = "gray",
+}: {
+    text: string;
+    color?: "green" | "gray" | "red" | "yellow" | "amber";
+}) {
+    const map: Record<string, string> = {
+        green: "bg-emerald-100 text-emerald-700 ring-emerald-200",
+        gray: "bg-gray-100 text-gray-700 ring-gray-200",
+        red: "bg-red-100 text-red-700 ring-red-200",
+        yellow: "bg-yellow-100 text-yellow-700 ring-yellow-200",
+        amber: "bg-amber-100 text-amber-800 ring-amber-200",
+    };
+    return (
+        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${map[color]}`}>
+            {text}
+        </span>
     );
 }

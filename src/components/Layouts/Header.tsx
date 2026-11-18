@@ -36,6 +36,7 @@ import IconFolderPlus from '../Icon/IconFolderPlus';
 import { apiManager } from '../../services/api/ApiManager';
 import { useApi } from '../../hooks/useApi';
 import { AuthService } from '../../services/auth/AuthService';
+import IconPencil from '../Icon/IconPencil';
 
 const Header = () => {
     const basename = import.meta.env.VITE_BASENAME || '';
@@ -112,18 +113,29 @@ const Header = () => {
     const cerrarSesion = () => {
         //elimino el token del localstorage
         AuthService.removeToken()
+        AuthService.removeTokenSeguimiento()
         AuthService.removeCookieLS("menuSideBar")
+        AuthService.removeCookieLS("rutaRedirect")
         //alert("hola")
     }
+    const usuarioRaw = localStorage.getItem("usuarioCookie");
+    const usuarioParsed = usuarioRaw ? JSON.parse(usuarioRaw) : {};
+    //console.log("usuarioParsed", usuarioParsed)
+    const [datosUsuario, setDatosUsuario] = useState({
+        nombres: usuarioParsed.nombres_completos || "",
+        username: usuarioParsed.username || "",
+        email: usuarioParsed.email || "",
+        ruc: usuarioParsed.ruc || "",
+        empresa: usuarioParsed.razon_social || "",
+    });
+
     return (
         <header className={`z-40 ${themeConfig.semidark && themeConfig.menu === 'horizontal' ? 'dark' : ''}`}>
             <div className="shadow-sm">
                 <div className="relative bg-white flex w-full items-center px-5 py-2.5 dark:bg-black">
                     <div className="horizontal-logo flex lg:hidden justify-between items-center ltr:mr-2 rtl:ml-2">
-                        <Link to="/" className="main-logo flex items-center shrink-0 bg-primary" >
-                            {/* <img className="w-8 ltr:-ml-1 rtl:-mr-1 inline" src="/assets/images/logo.svg" alt="logo" /> */}
-                            <img className="w-48 ltr:-ml-1 rtl:-mr-1 inline" src={"/assets/images/logo.png"} alt="logo q" />
-                            {/* <span className="text-2xl ltr:ml-1.5 rtl:mr-1.5  font-semibold  align-middle hidden md:inline dark:text-white-light transition-all duration-300">EISEGMI</span> */}
+                        <Link to="/" className="main-logo flex items-center shrink-0 hidden lg:block" >
+                            <img className="w-24 ltr:-ml-1 rtl:-mr-1 inline" src={"/assets/images/logo.png"} alt="logo q" />
                         </Link>
                         <button
                             type="button"
@@ -166,13 +178,13 @@ const Header = () => {
                                     </button>
                                 </div>
                             </form> */}
-                            <button
+                            {/* <button
                                 type="button"
                                 onClick={() => setSearch(!search)}
                                 className="search_btn sm:hidden p-2 rounded-full bg-white-light/40 dark:bg-dark/40 hover:bg-white-light/90 dark:hover:bg-dark/60"
                             >
                                 <IconSearch className="w-4.5 h-4.5 mx-auto dark:text-[#d0d2d6]" />
-                            </button>
+                            </button> */}
                         </div>
                         <div>
                             {/* {themeConfig.theme === 'light' ? (
@@ -218,6 +230,15 @@ const Header = () => {
                         </div> */}
                         {/* <div className="dropdown shrink-0">
                         </div> */}
+                        {/* ejemplo 28214482 - POLIMETALICOS DEL NORTE S.A.C */}
+                        {/*datos del usuario- emprsa*/}
+                        <span className="text-sm font-medium text-gray-700 bg-gray-100 px-3 py-1 rounded-md shadow-sm">
+                            Bienvenido {datosUsuario?.nombres}
+                        </span>
+                        <span className="text-sm font-medium text-gray-700 bg-gray-100 px-3 py-1 rounded-md shadow-sm">
+                            {datosUsuario?.ruc} — {datosUsuario?.empresa}
+                        </span>
+
                         <div className="dropdown shrink-0" hidden>
                             <Dropdown
                                 offset={[0, 8]}
@@ -297,41 +318,35 @@ const Header = () => {
                                 offset={[0, 8]}
                                 placement={`${isRtl ? 'bottom-start' : 'bottom-end'}`}
                                 btnClassName="relative group block"
-                                button={<img className="w-9 h-9 rounded-full object-cover saturate-50 group-hover:saturate-100" src="/assets/images/user-profile.jpeg" alt="userProfile" />}
+                                button={<img className="w-9 h-9 rounded-full object-cover saturate-50 group-hover:saturate-100" src="/assets/images/user.png" alt="userProfile" />}
                             >
                                 <ul className="text-dark dark:text-white-dark !py-0 w-[230px] font-semibold dark:text-white-light/90">
                                     <li>
                                         <div className="flex items-center px-4 py-4">
-                                            <img className="rounded-md w-10 h-10 object-cover" src="/assets/images/user-profile.jpeg" alt="userProfile" />
+                                            <img className="rounded-md w-10 h-10 object-cover" src="/assets/images/user.png" alt="userProfile" />
                                             <div className="ltr:pl-4 rtl:pr-4 truncate">
                                                 <h4 className="text-base">
-                                                    Prueba
+                                                    {datosUsuario.nombres}
                                                     {/* <span className="text-xs bg-success-light rounded text-success px-1 ltr:ml-2 rtl:ml-2">Pro</span> */}
                                                 </h4>
                                                 <button type="button" className="text-black/60 hover:text-primary dark:text-dark-light/60 dark:hover:text-white">
-                                                    pruab
+                                                    {datosUsuario.email}
                                                 </button>
                                             </div>
                                         </div>
                                     </li>
                                     <li>
-                                        <Link to="/users/profile" className="dark:hover:text-white">
+                                        <Link to="#" className="dark:hover:text-white">
                                             <IconUser className="w-4.5 h-4.5 ltr:mr-2 rtl:ml-2 shrink-0" />
                                             Mi Perfil
                                         </Link>
                                     </li>
-                                    {/* <li>
-                                        <Link to="/apps/mailbox" className="dark:hover:text-white">
-                                            <IconMail className="w-4.5 h-4.5 ltr:mr-2 rtl:ml-2 shrink-0" />
-                                            Inbox
+                                    <li>
+                                        <Link to="/miFirma" className="dark:hover:text-white">
+                                            <IconPencil className="w-4.5 h-4.5 ltr:mr-2 rtl:ml-2 shrink-0" />
+                                            Configurar Firma
                                         </Link>
                                     </li>
-                                    <li>
-                                        <Link to="/auth/boxed-lockscreen" className="dark:hover:text-white">
-                                            <IconLockDots className="w-4.5 h-4.5 ltr:mr-2 rtl:ml-2 shrink-0" />
-                                            Lock Screen
-                                        </Link>
-                                    </li> */}
                                     <li className="border-t border-white-light dark:border-white-light/10"  >
                                         <Link to="/login" onClick={cerrarSesion} className="text-danger !py-3">
                                             <IconLogout className="w-4.5 h-4.5 ltr:mr-2 rtl:ml-2 rotate-90 shrink-0" />
